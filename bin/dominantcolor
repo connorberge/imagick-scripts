@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Developed by Fred Weinhaus 8/3/2016 .......... revised 10/26/2016
+# Developed by Fred Weinhaus 8/3/2016 .......... revised 9/9/2018
 # 
 # ------------------------------------------------------------------------------
 # 
@@ -47,8 +47,8 @@
 # -p     print            print options: all (hexcolors and counts for all 
 #                         numcolors) or dominant (only the hexcolor for the 
 #                         dominant color; default=dominant
-# -s     swatches         display swatches for option -p print; yes or no; 
-#                         default=no
+# -s     swatches         view or save swatches for option -p print; view or save; 
+#                         default is no swatches
 # 
 ###
 # 
@@ -72,7 +72,8 @@
 # color reduction. Values are integers>1. The default=6.
 # 
 # -e excludecolor ... EXCLUDECOLOR is an exclude color to be ignored in 
-# getting the dominant color. Any valid opaque IM color. The default=black.
+# getting the dominant color. Any valid opaque IM color. The default=black for 
+# -m 4; otherwise, not used.
 # 
 # -f fuzzval ... FUZZVAL is the fuzz value for modes 2-6. Smaller values  
 # select colors closer to the mode desired, but may lead to less than the 
@@ -81,8 +82,9 @@
 # -p print ... PRINT options: all (hexcolors and counts for all numcolors) or 
 # dominant (only the hexcolor for the dominant color. The default=dominant.
 # 
-# -s swatches ... display SWATCHES for option -p print. Choices are: yes or no. 
-# The default=no.
+# -s swatches ... view or save SWATCHES for option -p print. Choices are: view (v) 
+# or save (s). The default is no swatches. If save, then the output will be named 
+# with either _dominantcolor or _swatches appended to the input name as a gif image. 
 # 
 # CAVEAT: No guarantee that this script will work on all platforms, 
 # nor that trapping of inconsistent parameters is complete and 
@@ -97,7 +99,7 @@ numcolors=6			# integer>1
 ecolor="black"		# exclude color
 fuzzval=50			# fuzz value
 print="dominant"	# all hexcolors or dominant hexcolor
-swatches="yes"		# view swatches; yes or no
+swatches=""		    # view swatches; view or save
 
 # set directory for temporary files
 dir="."    # suggestions are dir="." or dir="/tmp"
@@ -145,7 +147,7 @@ if [ $# -eq 0 ]
    echo ""
    usage2
    exit 0
-elif [ $# -gt 12 ]
+elif [ $# -gt 13 ]
 	then
 	errMsg "--- TOO MANY ARGUMENTS WERE PROVIDED ---"
 else
@@ -217,8 +219,8 @@ else
 					   checkMinus "$1"
 					   swatches=`echo "$1" | tr "[:upper:]" "[:lower:]"`
 					   case "$swatches" in 
-							yes|y) swatches="yes" ;;
-							no|n) swatches="no" ;;
+							view|v) swatches="view" ;;
+							save|s) swatches="save" ;;
 							*) errMsg "--- SWATCHES=$swatches IS AN INVALID VALUE ---" 
 					   esac
 				   	   ;;
@@ -242,6 +244,8 @@ fi
 
 # test that infile provided
 [ "$infile" = "" ] && errMsg "NO INPUT FILE SPECIFIED"
+
+inname=`convert -ping "$infile" -format "%t" info:`
 
 # setup temporary images
 tmpA1="$dir/dominantcolor_1_$$.mpc"
@@ -300,21 +304,31 @@ fi
 if [ "$print" = "dominant" ]; then
 	dominantcolor=`echo "$sortedfinalcolors" | head -n 1 | cut -d, -f2`
 	echo "$dominantcolor"
-	if [ "$swatches" = "yes" ]; then
-		convert xc:"$dominantcolor" -scale 5000% show:
+	if [ "$swatches" != "" ]; then
+		if [ "$swatches" = "view" ]; then
+			action="show:"
+		elif [ "$swatches" = "save" ]; then
+			action="${inname}_dominantcolor.gif"
+		fi
+		convert xc:"$dominantcolor" -scale 5000% $action
 	fi
 elif [ "$print" = "all" ]; then
 	echo "dominant colors:"
 	echo "count,hexcolor"
 	echo "$sortedfinalcolors"
-	if [ "$swatches" = "yes" ]; then
+	if [ "$swatches" != "" ]; then
 		swatch_list=""
 		for item in $sortedfinalcolors; do
 			color=`echo "$item" | cut -d, -f2`
 			pixel="xc:'$color'"
 			swatch_list="$swatch_list $pixel"
 		done
-		eval 'convert '$swatch_list' +append -scale 5000% show:'
+		if [ "$swatches" = "view" ]; then
+			action="show:"
+		elif [ "$swatches" = "save" ]; then
+			action="${inname}_swatches.gif"
+		fi
+		eval 'convert '$swatch_list' +append -scale 5000% $action'
 	fi
 fi
 

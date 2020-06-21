@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Developed by Fred Weinhaus 6/25/2014 .......... revised 07/19/2016
+# Developed by Fred Weinhaus 6/25/2014 .......... revised 7/20/2019
 #
 # ------------------------------------------------------------------------------
 # 
@@ -26,8 +26,9 @@
 # 
 ####
 #
-# USAGE: kmeans [-n numcolors] [-s seedcolors] [-m maxiters] [-c convergence] 
-# [-a area] [-t type] [-C colorspace] [-v view] infile outfile
+# USAGE: kmeans [-n numcolors] [-s seedcolors] [-m maxiters] [-c convergence] [-a area] 
+# [-t type] [-C colorspace] [-b bgcolor] [-v view] [-A adjoin] [-k compression]
+# infile outfile
 # USAGE: kmeans [-h or -help]
 #
 # OPTIONS:
@@ -45,9 +46,15 @@
 # -t     type            type of output; choices are flattened (f) or 
 #                        layered (l); default=flattened
 # -C     colorspace      colorspace in which to do processing; default=sRGB
+# -b     bgcolor         color to put under any transparency; any valid opaque
+#                        color is allowed; default is no change of color
 # -v     view            hexcolors (only), swatches (and hex colors), 
 #                        progress (and hex colors), all (progress, hexcolors 
 #                        swatches) and dominant (dominant color).
+# -A     adjoin          adjoin layered output images into a single multi-page 
+#                        image; choices are: yes (y) or no (n); default=yes
+# -k     compression     compression type if saved to tif; choices are: none (n), 
+#                        lzw (l), or zip (z); default=zip
 #
 ###
 #
@@ -64,10 +71,12 @@
 # each seed color. Then it computes the new mean colors from the clusters. 
 # This process iterates until either the convergence value is reached or the 
 # maximum number of iterations is reached. The script is limited to fully 
-# opaque images. Optionally, connected components labeling may be use to 
-# remove small isolated clusters for IM versions 6.8.9-10 or later. The 
-# final list of colors will be sorted by histogram count so that the first 
-# color in the list will be the dominant color in the image.
+# opaque images for type=layered. If type=flattened, then the input may have 
+# and alpha channel that will be remove for processing and added back at the 
+# end. Optionally, connected components labeling may be use to remove small 
+# isolated clusters for IM versions 6.8.9-10 or later. The final list of 
+# colors will be sorted by histogram count so that the first color in the 
+# list will be the dominant color in the image.
 # 
 # OPTIONS: 
 #
@@ -98,12 +107,16 @@
 # 
 # -t type ... TYPE of output image. The choices are flattened (f) or 
 # layered (l). The default=flattened. Note the format of the output must be 
-# either GIF or TIF or TIFF to support the layered option. Suffixes may be 
-# all upper case or all lower case. If other formats are used, then multiple 
-# output images will be created rather than a layered image.
+# either GIF or TIF or TIFF to support the multi-page layered option, unless  
+# -A adjoin is set to no. Suffixes may be all upper case or all lower case. 
+# If other formats are used, then multiple output images will be created rather  
+# than a layered image.
 # 
 # -C colorspace ... COLORSPACE in which to do processing; default=sRGB; other 
 # colorspaces that do well are YCbCr and LAB.
+# 
+# -b bgcolor ... BGCOLOR is the backgrouond color to put under any transparency.
+# Any valid opaque color is allowed. The default is no change of color.
 # 
 # -v view ... VIEW permits one to list to the terminal or display any of the
 # following options: hexcolors, swatches (and hex colors), progress (and hex
@@ -118,6 +131,12 @@
 # will list only the hexcolor value of the dominant color in the image. The
 # default is none of the above. Note that hexcolors and swatches will be
 # presented in the working colorspace and not converted to sRGB.
+# 
+# -A adjoin ... ADJOIN layered output images into a single multi-page image. 
+# The choices are: yes (y) or no (n). The default=yes.
+# 
+# -k compression ... COMPRESSION type if saved to tif. The choices are: none (n), 
+# lzw (l), or zip (z); default=zip
 # 
 # REQUIREMENTS: IM version 6.8.9-10 or higher to use option -a with connected 
 # components labeling to remove small isolated clusters.
@@ -143,8 +162,10 @@ convergence=0.05	# minimum rmse between previous and current set of colors; if r
 area=0				# maximum area to be merged into its surrounding/neighboring cluster
 type="flattened"    # type of output; flattened or layered
 colorspace="sRGB"	# working colorspace
+bgcolor=""			# background color to put under transparency
 view=""				# hexcolors (only), swatches (and hex colors), progress (and hex colors), all
-
+adjoin="yes"
+compression="zip"
 
 # set directory for temporary files
 tmpdir="."    # suggestions are tmpdir="." or tmpdir="/tmp"
@@ -193,7 +214,7 @@ if [ $# -eq 0 ]
    echo ""
    usage2
    exit 0
-elif [ $# -gt 18 ]
+elif [ $# -gt 22 ]
 	then
 	errMsg "--- TOO MANY ARGUMENTS WERE PROVIDED ---"
 else
@@ -268,6 +289,13 @@ else
 					   checkMinus "$1"
 					   colorspace="$1"
 					   ;;
+				-b)    # get bgcolor
+					   shift  # to get the next parameter
+					   # test if parameter starts with minus sign 
+					   errorMsg="--- INVALID BGCOLOR SPECIFICATION ---"
+					   checkMinus "$1"
+					   bgcolor="$1"
+					   ;;
 				-v)    # get view
 					   shift  # to get the next parameter
 					   # test if parameter starts with minus sign
@@ -281,6 +309,31 @@ else
 							all|a) view="all";;
 							dominant|d) view="dominant";;
 							*)  errMsg "--- VIEW=$view IS NOT A VALID VALUE ---" ;;
+					   esac
+					   ;;
+				-A)    # get adjoin
+					   shift  # to get the next parameter
+					   # test if parameter starts with minus sign
+					   errorMsg="--- INVALID ADJOIN SPECIFICATION ---"
+					   checkMinus "$1"
+					   adjoin=`echo "$1" | tr "[:upper:]" "[:lower:]"`
+					   case "$adjoin" in
+							yes|y) adjoin="yes";;
+							no|n) adjoin="no";;
+							*)  errMsg "--- ADJOIN=$adjoin IS NOT A VALID VALUE ---" ;;
+					   esac
+					   ;;
+				-k)    # get compression
+					   shift  # to get the next parameter
+					   # test if parameter starts with minus sign
+					   errorMsg="--- INVALID COMPRESSION SPECIFICATION ---"
+					   checkMinus "$1"
+					   compression=`echo "$1" | tr "[:upper:]" "[:lower:]"`
+					   case "$compression" in
+							none|n) compression="none";;
+							lzw|l) compression="lzw";;
+							zip|z) compression="zip";;
+							*)  errMsg "--- COMPRESSION=$compression IS NOT A VALID VALUE ---" ;;
 					   esac
 					   ;;
 				 -)    # STDIN and end of arguments
@@ -314,22 +367,44 @@ mkdir "$dir" || errMsg "--- FAILED TO CREATE TEMPORARY FILE DIRECTORY ---"
 trap "rm -rf $dir; exit 0" 0
 trap "rm -rf $dir; exit 1" 1 2 3 15
 
+
+
+# test if alpha channel
+channels=`convert -quiet "$infile" -format "%[channels]" info:`
+last_char=`echo ${channels:${#channels} - 1}`
+#echo "channels=$channels; last_char=$last_char;"
+
 # test if infile exists, is readable and is not zero size
-if ! [ -f "$infile" -a -e "$infile" -a -r "$infile" -a -s "$infile" ]; then
-	echo  "--- FILE $infile DOES NOT EXIST OR IS NOT AN ORDINARY FILE, NOT READABLE OR HAS ZERO SIZE  ---"
+if [ "$last_char" = "a" ]; then
+	if [ "$bgcolor" != "" ]; then
+		bgproc="-background $bgcolor -alpha background"
+	else
+		bgproc=""
+	fi
+	convert -quiet "$infile" +repage $bgproc \
+		\( -clone 0 -alpha extract +write $dir/tmpA.miff +delete \) \
+		-alpha off -colorspace $colorspace -set colorspace sRGB $dir/tmpI.miff ||
+		echo  "--- FILE $infile DOES NOT EXIST OR IS NOT AN ORDINARY FILE, NOT READABLE OR HAS ZERO SIZE  ---"
 else
-	convert -quiet "$infile" +repage -colorspace $colorspace -set colorspace sRGB $dir/tmpI.miff
+	convert -quiet "$infile" +repage -colorspace $colorspace -set colorspace sRGB $dir/tmpI.miff ||
+		echo  "--- FILE $infile DOES NOT EXIST OR IS NOT AN ORDINARY FILE, NOT READABLE OR HAS ZERO SIZE  ---"
 fi
 
 
 # get IM version
 im_version=`convert -list configure | \
-	sed '/^LIB_VERSION_NUMBER /!d; s//,/;  s/,/,0/g;  s/,0*\([0-9][0-9]\)/\1/g' | head -n 1`
+	sed '/^LIB_VERSION_NUMBER */!d; s//,/;  s/,/,0/g;  s/,0*\([0-9][0-9]\)/\1/g' | head -n 1`
 
+
+if [ "$im_version" -ge "07000000" ]; then
+	identifying="magick identify"
+else
+	identifying="identify"
+fi
 
 # get image dimensions
-ww=`identify -ping -format "%w" $dir/tmpI.miff`
-hh=`identify -ping -format "%h" $dir/tmpI.miff`
+ww=`$identifying -ping -format "%w" $dir/tmpI.miff`
+hh=`$identifying -ping -format "%h" $dir/tmpI.miff`
 #echo "ww=$ww; hh=$hh;"
 
 
@@ -357,9 +432,32 @@ else
 	flattening=""
 fi
 
+# set up for adjoin
+if [ "$adjoin" = "no" ]; then
+	adjoining="+adjoin"
+else
+	adjoining=""
+fi
+
+# set up for tif compression
+# get suffix
+suffix="${outfile##*.}"
+# change to lower case
+suffix=`echo "$suffix" | tr '[:upper:]' '[:lower:]'`
+echo "$suffix"
+if [ "$suffix" = "tif" -o "$suffix" = "tiff" ]; then
+	compressing="-compress $compression"
+else
+	compressing=""
+fi
+echo "$compressing"
+
 # process kmeans code
 # create white image
-convert -size ${ww}x${hh} xc:white $dir/tmpW.miff
+# note must add -colorspace gray for IM 7; 
+# otherwise it will be doing -evaluate-sequence later between 3 channel white image and grayscale images,
+# which will produce a cyan result.
+convert -size ${ww}x${hh} xc:white -colorspace gray $dir/tmpW.miff
 
 # loop over iterations
 for ((k=0; k<maxiters; k++)); do
@@ -508,13 +606,15 @@ if [ $area -gt 0 ]; then
 
 		# separate colorized images to form final layered images
 		if [ "$type" = "layered" ]; then
-			for ((i=0; i<numcolors; i++)); do
-			# odd that need -fuzz 1% to match colors
-			convert $dir/tmpI.miff -alpha off -set colorspace $colorspace -colorspace sRGB -depth 8 -fuzz 1% +transparent "${colorArr[$i]}" $dir/tmpS$i.miff
-			convert $imagelist "$outfile"
-			done
+			convert $imagelist -set colorspace $colorspace -colorspace sRGB -depth 8 -flatten $dir/tmpI.miff
+			convert $imagelist -set colorspace $colorspace -colorspace sRGB $adjoining $compressing "$outfile"
 		else
-			convert $dir/tmpI.miff "$outfile"
+			convert $imagelist -set colorspace $colorspace -colorspace sRGB -depth 8 -flatten $dir/tmpI.miff
+			if [ "$last_char" = "a" ]; then
+				convert $dir/tmpI.miff $dir/tmpA.miff -alpha off -compose copy_opacity -composite "$outfile"
+			else
+				convert $dir/tmpI.miff $compressing "$outfile"
+			fi
 		fi
 
 
@@ -538,15 +638,17 @@ else
 
 	# separate colorized images to form final layered images
 	if [ "$type" = "layered" ]; then
-		for ((i=0; i<numcolors; i++)); do
-		# odd that need -fuzz 1% to match colors
-		#convert $dir/tmpI.miff -alpha off -set colorspace $colorspace -colorspace sRGB -depth 8 -fuzz 1% +transparent "${colorArr[$i]}" $dir/tmpS$i.miff
-		convert $imagelist "$outfile"
-		done
+		# flatten images to use for sortedfinalcolors
+		convert $imagelist -set colorspace $colorspace -colorspace sRGB -depth 8 -flatten $dir/tmpI.miff
+		convert $imagelist -set colorspace $colorspace -colorspace sRGB $adjoining $compressing "$outfile"
 	else
 		# flatten images
 		convert $imagelist -set colorspace $colorspace -colorspace sRGB -depth 8 -flatten $dir/tmpI.miff
-		convert $dir/tmpI.miff "$outfile"
+		if [ "$last_char" = "a" ]; then
+			convert $dir/tmpI.miff $dir/tmpA.miff -alpha off -compose copy_opacity -composite "$outfile"
+		else
+			convert $dir/tmpI.miff $compressing "$outfile"
+		fi
 	fi
 
 

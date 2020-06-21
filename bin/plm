@@ -1,9 +1,33 @@
 #!/bin/bash
 #
-# Developed by Fred Weinhaus 8/18/2007 .......... revised 8/18/2012
+# Developed by Fred Weinhaus 8/18/2007 .......... revised 11/25/2017
+# 
+# ------------------------------------------------------------------------------
+# 
+# Licensing:
+# 
+# Copyright © Fred Weinhaus
+# 
+# My scripts are available free of charge for non-commercial use, ONLY.
+# 
+# For use of my scripts in commercial (for-profit) environments or 
+# non-free applications, please contact me (Fred Weinhaus) for 
+# licensing arrangements. My email address is fmw at alink dot net.
+# 
+# If you: 1) redistribute, 2) incorporate any of these scripts into other 
+# free applications or 3) reprogram them in another scripting language, 
+# then you must contact me for permission, especially if the result might 
+# be used in a commercial or for-profit environment.
+# 
+# My scripts are also subject, in a subordinate manner, to the ImageMagick 
+# license, which can be found at: http://www.imagemagick.org/script/license.php
+# 
+# ------------------------------------------------------------------------------
+# 
+####
 #
-# USAGE: plm [-s xscale,yscale] [-g] "x1,y1 x2,y2 ..." infile outfile
-# USAGE: plm [-s xscale,yscale] [-g] -f point_file infile outfile
+# USAGE: plm [-s xscale,yscale] [-c channel] [-g] "x1,y1 x2,y2 ..." infile outfile
+# USAGE: plm [-s xscale,yscale] [-c channel] [-g] -f point_file infile outfile
 # USAGE: plm [-h or -help]
 #
 # OPTIONS:
@@ -18,6 +42,9 @@
 #                        one x,y pair per line
 # -s  xscale,yscale      range of values for x,y breakpoint pairs from 0 to xscale,yscale;
 #                        positive integers; default=100,100
+# -c  channel            channel to process; options are: red, green, blue, 
+#                        lightness, brightness, luma and luminosity; 
+#                        default=all rgb channels
 # -g                     enables the creation of a graph of the piece-wise linear
 #                        transformation, which is then displayed automatically.
 #                        There is a default setting below that can be changed 
@@ -65,6 +92,10 @@
 # are specified # between 0 and 255 and the length of the output image is 256. 
 # Equal values for xscale and yscale are not required. 
 # 
+# -c channel ... CHANNEL to process. Options are: red, green, blue, lightness 
+# (L from HSL), brightness (B from HSB), luma (Y from YCbCr) and luminosity 
+# (L from Lab). The default=all rgb channels.
+#
 # -g ... enables the creation of a graph of the piece-wise linear transformation, 
 # which is then displayed automatically. There is a default setting below that can 
 # be changed to enable this to be save to a file named lutfile_graph.gif. The graph 
@@ -82,6 +113,7 @@
 xscale=100
 yscale=100
 height=10
+channel=""
 # maxpoints=40	# no longer a limit
 decimal=1		# decimal precision for re-listing points and graphing
 
@@ -99,13 +131,13 @@ usage1()
 	{
 	echo >&2 ""
 	echo >&2 "$PROGNAME:" "$@"
-	sed >&2 -n '/^###/q;  /^#/!q;  s/^#//;  s/^ //;  4,$p' "$PROGDIR/$PROGNAME"
+	sed >&2 -e '1,/^####/d;  /^###/g;  /^#/!q;  s/^#//;  s/^ //;  4,$p' "$PROGDIR/$PROGNAME"
 	}
 usage2() 
 	{
 	echo >&2 ""
 	echo >&2 "$PROGNAME:" "$@"
-	sed >&2 -n '/^######/q;  /^#/!q;  s/^#*//;  s/^ //;  4,$p' "$PROGDIR/$PROGNAME"
+	sed >&2 -e '1,/^####/d;  /^######/g;  /^#/!q;  s/^#*//;  s/^ //;  4,$p' "$PROGDIR/$PROGNAME"
 	}
 
 # function to report error messages, usage and exit
@@ -144,7 +176,7 @@ if [ $# -eq 0 ]
    echo ""
    usage2
    exit 0
-elif [ $# -gt 6 ]
+elif [ $# -gt 8 ]
 	then
 	errMsg "--- TOO MANY ARGUMENTS WERE PROVIDED ---"
 else
@@ -177,6 +209,23 @@ else
 					   [ $test -eq 0 ] && errMsg "--- XSCALE AND/OR YSCALE ARE NOT INTEGERS ---"
 					   xscale=`echo "$1" | cut -d, -f1`
 					   yscale=`echo "$1" | cut -d, -f2`  ;;
+				-c)    # get  channel
+					   shift  # to get the next parameter
+					   # test if parameter starts with minus sign 
+					   errorMsg="--- INVALID CHANNEL SPECIFICATION ---"
+					   checkMinus "$1"
+					   channel=`echo "$1" | tr "[:upper:]" "[:lower:]"`
+						case "$channel" in
+						 red) ;;
+						 green) ;;
+						 blue) ;;
+						 lightness) ;;
+						 brightness) ;;
+						 luma) ;;
+						 luminosity) ;;
+						 *) errMsg="--- UNKNOWN CHANNEL ---"
+						esac
+					   ;;
 				 -)    # STDIN and end of arguments
 					   break
 					   ;;
@@ -193,8 +242,8 @@ fi
 if [ "$opt" = "-f" ]
 	then
 	# get infile and outfile as the last arguments left
-    infile=$1
-    outfile=$2
+    infile="$1"
+    outfile="$2"
 	# put the file with line breaks into parm
 	parms=`cat $point_file`
 	# strip the line breaks (works ONLY if $parm is NOT put into quotes "$parm")
@@ -276,7 +325,7 @@ test=`expr "$infile" : '^[0-9]*,.*$'`
 [ $test -gt 0 ] && errMsg "--- INPUT/OUTPUT FILES IMPROPERLY SPECIFIED ---"
 
 # test input image
-if convert -quiet -regard-warnings "$infile" +repage "$tmpA"
+if convert -quiet "$infile" +repage "$tmpA"
 	then
 	: 'do nothing special'
 	else
@@ -310,9 +359,35 @@ plistnew="$plist $xscale,0"
 # echo "plistnew=$plistnew"
 # *************
 
+if [ "$channel" = "red" ]; then
+	cproc1="-channel red"
+	cproc2="+channel"
+elif [ "$channel" = "green" ]; then
+	cproc1="-channel green"
+	cproc2="+channel"
+elif [ "$channel" = "blue" ]; then
+	cproc1="-channel blue"
+	cproc2="+channel"
+elif [ "$channel" = "lightness" ]; then
+	cproc1="$setcspace -colorspace HSL -channel blue"
+	cproc2="+channel -colorspace $cspace"
+elif [ "$channel" = "brightness" ]; then
+	cproc1="$setcspace -colorspace HSB -channel blue"
+	cproc2="+channel -colorspace $cspace"
+elif [ "$channel" = "luma" ]; then
+	cproc1="$setcspace -colorspace YCbCr -channel red"
+	cproc2="+channel -colorspace $cspace"
+elif [ "$channel" = "luminosity" ]; then
+	cproc1="$setcspace -colorspace Lab -channel red"
+	cproc2="+channel -colorspace $cspace"
+else
+	cproc1=""
+	cproc2=""
+fi
+
 # create and apply lut
 im_version=`convert -list configure | \
-	sed '/^LIB_VERSION_NUMBER /!d;  s//,/;  s/,/,0/g;  s/,0*\([0-9][0-9]\)/\1/g' | head -n 1`
+	sed '/^LIB_VERSION_NUMBER */!d;  s//,/;  s/,/,0/g;  s/,0*\([0-9][0-9]\)/\1/g' | head -n 1`
 if [ "$im_version" -ge "06030507" ]
 	then 
 	proc="-clut"
@@ -329,7 +404,7 @@ convert $tmpA \
 	-draw "polygon $plistnew" \
 	-crop ${ww}x${yscale}+0+1 +repage \
 	-scale ${ww}x1! \) \
-	$proc $outfile
+	$cproc1 $proc $cproc2 "$outfile"
 
 # display graph if option -g
 if [ "$display_graph" = "yes" ]

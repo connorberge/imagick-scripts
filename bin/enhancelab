@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Developed by Fred Weinhaus 7/28/2012 .......... revised 4/25/2015
+# Developed by Fred Weinhaus 7/28/2012 .......... revised 10/31/2017
 #
 # ------------------------------------------------------------------------------
 # 
@@ -232,7 +232,7 @@ convert -quiet "$infile" +repage "$tmpA1" ||
 
 # get im_version
 im_version=`convert -list configure | \
-	sed '/^LIB_VERSION_NUMBER /!d; s//,/;  s/,/,0/g;  s/,0*\([0-9][0-9]\)/\1/g' | head -n 1`
+	sed '/^LIB_VERSION_NUMBER */!d; s//,/;  s/,/,0/g;  s/,0*\([0-9][0-9]\)/\1/g' | head -n 1`
 
 # test for proper IM version
 [ "$im_version" -lt "06070802" ] && errMsg "--- REQUIRES IM 6.7.8.2 OR HIGHER  ---"
@@ -249,7 +249,6 @@ else
 	sign="-"
 fi
 
-echo "sign=$sign"
 
 # allow sigmoidal contrast of zero to be close to zero but not exactly equal where it degenerates
 

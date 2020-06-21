@@ -1,6 +1,31 @@
 #!/bin/bash
 #
-# Developed by Fred Weinhaus revised 6/9/2012 .......... revised 6/9/2012
+# Developed by Fred Weinhaus revised 6/9/2012 .......... revised 6/14/2019
+# (Thanks to Frank Heckenbach for a bug fix --- 6/12/2019)
+#
+# ------------------------------------------------------------------------------
+# 
+# Licensing:
+# 
+# Copyright © Fred Weinhaus
+# 
+# My scripts are available free of charge for non-commercial use, ONLY.
+# 
+# For use of my scripts in commercial (for-profit) environments or 
+# non-free applications, please contact me (Fred Weinhaus) for 
+# licensing arrangements. My email address is fmw at alink dot net.
+# 
+# If you: 1) redistribute, 2) incorporate any of these scripts into other 
+# free applications or 3) reprogram them in another scripting language, 
+# then you must contact me for permission, especially if the result might 
+# be used in a commercial or for-profit environment.
+# 
+# My scripts are also subject, in a subordinate manner, to the ImageMagick 
+# license, which can be found at: http://www.imagemagick.org/script/license.php
+# 
+# ------------------------------------------------------------------------------
+# 
+####
 #
 # USAGE: overlapcrop [-s size] [-o overlap] [-m mode] [-u] 
 #        [-i initnum] [-z zeropad] [-d delay] [-l loop] [-c canvas] 
@@ -146,13 +171,13 @@ usage1()
 	{
 	echo >&2 ""
 	echo >&2 "$PROGNAME:" "$@"
-	sed >&2 -n '/^###/q;  /^#/!q;  s/^#//;  s/^ //;  4,$p' "$PROGDIR/$PROGNAME"
+	sed >&2 -e '1,/^####/d;  /^###/g;  /^#/!q;  s/^#//;  s/^ //;  4,$p' "$PROGDIR/$PROGNAME"
 	}
 usage2() 
 	{
 	echo >&2 ""
 	echo >&2 "$PROGNAME:" "$@"
-	sed >&2 -n '/^######/q;  /^#/!q;  s/^#*//;  s/^ //;  4,$p' "$PROGDIR/$PROGNAME"
+	sed >&2 -e '1,/^####/d;  /^######/g;  /^#/!q;  s/^#*//;  s/^ //;  4,$p' "$PROGDIR/$PROGNAME"
 	}
 
 
@@ -302,8 +327,8 @@ else
 	done
 	#
 	# get infile and outfile
-	infile=$1
-	outfile=$2
+	infile="$1"
+	outfile="$2"
 fi
 
 # test that infile provided
@@ -324,20 +349,17 @@ fi
 tmpA1="$dir/overlapcrop_A_$$.mpc"
 tmpA2="$dir/overlapcrop_A_$$.cache"
 tmp1="$dir/overlapcrop_1_$$.miff"
-trap "rm -f $tmpA1 $tmpA2 $tmp1; exit 0" 0
+trap "rm -f $tmpA1 $tmpA2 $tmp1;" 0
 trap "rm -f $tmpA1 $tmpA2 $tmp1; exit 1" 1 2 3 15
-
-# setup temporary images
-tmpA1="$dir/overlapcrop_A_$$.mpc"
-tmpA2="$dir/overlapcrop_A_$$.cache"
-tmp1="$dir/overlapcrop_1_$$.miff"
-trap "rm -f $tmpA1 $tmpA2 $tmp1; exit 0" 0
-trap "rm -f $tmpA1 $tmpA2 $tmp1; exit 1" 1 2 3 15
+trap "rm -f $tmpA1 $tmpA2 $tmp1; exit 1" ERR
 
 # read the input image and filter image into the temp files and test validity.
-convert -quiet -regard-warnings "$infile" $gray +repage "$tmpA1" ||
+convert -quiet "$infile" $gray +repage "$tmpA1" ||
 	errMsg "--- FILE $infile DOES NOT EXIST OR IS NOT AN ORDINARY FILE, NOT READABLE OR HAS ZERO SIZE  ---"
 
+# get IM version
+im_version=`convert -list configure | \
+	sed '/^LIB_VERSION_NUMBER */!d;  s//,/;  s/,/,0/g;  s/,0*\([0-9][0-9]\)/\1/g'`
 
 
 # get width and height of image
@@ -379,13 +401,12 @@ oh=`convert xc: -format "%[fx:$sh-$oy]" info:`
 
 # get ending pixel for stopping loops
 if [ "$uniform" = "no" ]; then
-	ew=`convert xc: -format "%[fx:$ww-$sw+$ox-1]" info:`
-	eh=`convert xc: -format "%[fx:$hh-$sh+$oy-1]" info:`
+	ew=`convert xc: -format "%[fx:$ww-$sw+$ow-1]" info:`
+	eh=`convert xc: -format "%[fx:$hh-$sh+$oh-1]" info:`
 elif [ "$uniform" = "yes" ]; then
 	ew=`convert xc: -format "%[fx:$ww-$sw]" info:`
 	eh=`convert xc: -format "%[fx:$hh-$sh]" info:`
 fi	
-
 #echo "ww=$ww; hh=$hh; sw=$sw; sh=$sh; ow=$ow; oh=$oh; ew=$ew; eh=$eh"
 
 # set up to keep virtual canvas
@@ -399,7 +420,7 @@ fi
 k=0
 for ((i=0;i<=eh;i+=oh)); do
 	for ((j=0;j<=ew;j+=ow)); do
-		((k++))
+		k=$((k+1))
 	done
 done
 num=$k
@@ -435,19 +456,26 @@ for ((i=0;i<=eh;i+=oh)); do
 			filelist="$filelist ${outname}_r${m}_c${n}.$suffix"
 		fi
 		dw=$(($dw+$ow))
-		((t++))
-		((k++))
-		((n++))
+		t=$((t+1))
+		k=$((k+1))
+		n=$((n+1))
 	done
 	dh=$(($dh+$oh))
-	((m++))
+	m=$((m+1))
 done
 echo ""
 
 if [ "$mode" = "frames" ]; then
 	convert $tmp1 -delete 0 ${outname}.$suffix
 elif [ "$mode" = "animation" ]; then
-	convert -delay $delay -dispose Background $tmp1 -delete 0 -loop $loop ${outname}_animation.$suffix
+	convert -delay $delay -dispose Background $tmp1 -delete 0 -loop $loop "${outname}_animation.$suffix"
+fi
+
+
+if [ "$im_version" -ge "07000000" ]; then
+	montaging="magick montage"
+else
+	montaging="montage"
 fi
 
 if [ "$mode" != "frames" -a "$mode" != "animation" -a "$montage" = "yes" ]; then
@@ -456,9 +484,9 @@ if [ "$mode" != "frames" -a "$mode" != "animation" -a "$montage" = "yes" ]; then
 	else
 		labeling=""
 	fi
-	montage $labeling $filelist -tile $((n-initnum))x$((m-initnum)) \
+	$montaging $labeling $filelist -tile $((n-initnum))x$((m-initnum)) \
 		-frame $frame -geometry +${spacing}+${spacing} \
-		${outname}_montage.$suffix
+		"${outname}_montage.$suffix"
 	if [ "$remove" = "yes" ]; then
 		rm $filelist
 	fi
